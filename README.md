@@ -12,7 +12,7 @@ This Github hosts an API for:
 ### API & helper files 
 There are 2 main classes: a DataPreprocessor (*DataPreprocessor.py*), and a TrainTestPipeline (*TrainTestPipeline.py*).
 
-**DataPreprocessor**
+**DataPreprocessor**  
 This class handles feature engineering on raw data, correlation computations, and PCA computations. It also allows for visualizing correlation matrices and PCA (linear and nonlinear) and saving it to a file.  
 Dependent files: 
 * *data_preprocessing.py* : This contains helper functions for cleaning & preparing the dataset 
@@ -27,7 +27,7 @@ To initialize, specify the:
 * In the Flow Values Excel sheet, do **not** type outside of the colored rows, especially in rows below the data. If adding more data, make sure to follow the same format as in the sheet.     
 * Make sure the names of your samples, and size ranges of the samples, match **exactly** with how they are named in each raw Excel data sheet in your data folder.  
 
-**TrainTestPipeline**
+**TrainTestPipeline**  
 This class takes:
 * Preprocessed X (predictors, after feature engineering or dimensionality reduction) 
 * Y data (raw flow values for prediction or flow classes)
