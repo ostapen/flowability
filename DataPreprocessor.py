@@ -3,39 +3,41 @@ import pandas as pd
 from sklearn.decomposition import PCA, KernelPCA
 import pickle as pkl
 import numpy as np 
+import pdb
 import matplotlib.pyplot as plt 
+import seaborn as sns
 import matplotlib.backends.backend_pdf
 import os
-import seaborn as sns
-import pdb
 class DataPreprocessor:
 
-    def __init__(self, data_folder, flow_values_excel):
+    def __init__(self, data_folder, flow_values_excel, root_folder_):
         self.data_folder = data_folder # name of folder with excel microtrac data
         self.flow_values = flow_values_excel # name of file with flow values + flow classes 
-        files = os.listdir('.')
-        if ('AllData.csv') not in files:
+        files = os.listdir(root_folder_)
+        if not os.path.exists(f'{data_folder}/AllData.csv'):
+            print("Freshly processing file.")
             self.data_csv = None
         else:
             # update the target values if needed
             # to update the target class, make sure the first entry of that sample has the target class label you want 
-            tmp = pd.read_csv('AllData.csv')  
+            tmp = pd.read_csv(f'{data_folder}/AllData.csv')  
+            print(f"Using existing data file, {data_folder}/AllData.csv")
             updated_, mod = update_flow_classes(tmp, flow_values_excel)
             self.data_csv = updated_
             self.x_data_cols = [col for col in self.data_csv.columns if col not in ['Flow', 'SampleName', 'FlowClass']]
             if mod:
-                updated_.to_csv('AllData.csv', index=False)
+                updated_.to_csv('{data_folder}/AllData.csv', index=False)
             
     
     # loads or prepares the data csv with flow values 
-    
-    def prepare_df(self):
+    # preproc types: yeo-johnson (power transformer), quantile (quantile transformer), minmax (minmax scaler) 
+    def prepare_df(self, preproc_type = 'yeo-johnson'):
         files = os.listdir('.')
 
         if self.data_csv is None:
             # data_folder, clean_data_folder, flow_val_file, transform = True, flows = 'mean', feature_columns = None
             clean_data_folder = '_'.join([self.data_folder, 'transformed'])
-            samples_data = preprocess_data(self.data_folder, clean_data_folder, self.flow_values, transform=True)
+            samples_data = preprocess_data(self.data_folder, clean_data_folder, self.flow_values, preproc_type, transform=True)
             success, df = get_data_and_labels(clean_data_folder)
             if success: 
                 self.data_csv = df
@@ -57,7 +59,7 @@ class DataPreprocessor:
     # returns numpy matrix
     def get_feature_selection_x(self,method='pearson', threshold = 0.8, heldout_cols=None):
         df = self.data_csv
-        corr_matrix = compute_correlation(df, method, threshold, heldout_cols)
+        corr_matrix = compute_correlation(df, self.data_folder, method, threshold, heldout_cols)
         x_cols = [col for col in df.columns if col not in ['SampleName', 'Flow', 'FlowClass']]
         if heldout_cols:
             for col in heldout_cols:
@@ -89,7 +91,7 @@ class DataPreprocessor:
                 x_cols = [col for col in self.x_data_cols if col not in heldout_cols]
             else:
                 x_cols = self.x_data_cols
-            return self.data_csv[x_cols].to_numpy(), cols
+            return self.data_csv[x_cols].to_numpy(), x_cols
         else:
             return None, None
 
@@ -122,6 +124,7 @@ class DataPreprocessor:
             x_data_cols = self.x_data_cols
         x_data = self.data_csv[x_data_cols]
         if pca_type == 'linear':
+
             pca = PCA().fit(x_data)
         else:
             sample = x_data.sample(2000)
@@ -165,7 +168,7 @@ class DataPreprocessor:
         files = os.listdir('.')
         method_names = {'pearson': "Pearson", "mic": "MIC"}
         f, ax = plt.subplots(figsize=(11, 9))
-        corr_matrix = compute_correlation(df, method, threshold)
+        corr_matrix = compute_correlation(df, self.data_folder, method, threshold)
         x_cols = [col for col in df.columns if col not in ['SampleName', 'Flow', 'FlowClass']]
 
 

@@ -7,13 +7,14 @@ import secrets
 import pickle as pkl
 import graphviz
 #import xgboost as xgb
-from sklearn.metrics import mean_squared_error, f1_score, accuracy_score, recall_score, precision_score
+from sklearn.metrics import mean_squared_error, f1_score, accuracy_score, recall_score, precision_score, roc_auc_score
 from sklearn.linear_model import LinearRegression, LogisticRegression, BayesianRidge, SGDRegressor, SGDClassifier
 from sklearn.ensemble import RandomForestRegressor, AdaBoostRegressor, RandomForestClassifier
 from sklearn.neighbors import KNeighborsRegressor, KNeighborsClassifier
 from sklearn.decomposition import PCA, KernelPCA
 from sklearn.svm import SVR
 import seaborn as sns
+
 from collections import Counter
 import os
 
@@ -114,7 +115,9 @@ def is_classification(in_algo):
               'DecisionTreeClassifier': True,
              'RandomForestClassifier': True, 
               'KNeighborsClassifier': True
-              }         
+              }      
+    return models[in_algo]   
+
 def build_algorithm(algo_name):
     regressors = {'DecisionTreeRegressor': DecisionTreeRegressor(max_depth = 15),
              'SupportVectorRegressor': SVR(), 
@@ -130,11 +133,11 @@ def build_algorithm(algo_name):
 def basic_train(algo_name, x_data, y_data, all_samples):
     algo = build_algorithm(algo_name)
     is_classify = is_classification(algo_name)
-    
+    scores = []
     trained = algo.fit(x_data, y_data)    
     predicts = algo.predict(x_data) 
     
-    return {'scores': scores, 'y_test': y_data, 'predicted': np.asarray(predicts), 
+    return {'y_test': y_data, 'predicted': np.asarray(predicts), 
             'train_samples':all_samples, 'test_samples': all_samples, 'model':trained}
 
 # do kfold train + validation 
@@ -188,9 +191,13 @@ def leave_one_out_train_val(algo_name, x_data, y_data, all_samples):
         preds = trained.predict(X_test)
         predicts.append(preds)
         if classify:
-            f1 = f1_score(y_test, preds)
-            print("F1 Validation: %.2f"%(f1))
-            scores.append(f1)
+            
+            f1_mic = f1_score(y_test, preds, average='micro')
+            print("F1 Validation, Micro: %.2f"%(f1_mic))
+            f1_mac = f1_score(y_test, preds, average='micro')
+            print("F1 Validation, Macro: %.2f"%(f1_mac))
+            
+            scores.append(f1_mic)
         else:
             rmse = np.sqrt(mean_squared_error(y_test, preds))
             print("RMSE Validation: %.2f" %(rmse))

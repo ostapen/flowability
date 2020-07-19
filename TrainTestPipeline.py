@@ -8,7 +8,7 @@ import os
 import pandas as pd
 class TrainTestPipeline: 
 
-    def __init__(self, x_data, y_data, all_samples, model_name, heldout_samples = 'random'):
+    def __init__(self, x_data, y_data, all_samples, model_name, heldout_samples = 'random', num_heldout = 3):
         # pass a preprocessed data csv output by the data preprocessor 
         # all transformations, pca, feature selection should have been done at this point 
 
@@ -17,6 +17,7 @@ class TrainTestPipeline:
         self.all_samples = all_samples
         self.model_name = model_name 
         self.heldout_samples = heldout_samples
+        self.num_heldout = num_heldout
         
         self.data_split = None
         self.model = None
@@ -24,7 +25,7 @@ class TrainTestPipeline:
    
 
     def split_data(self):
-        train_test_dict = holdout_train_test(self.x_data, self.y_data, self.all_samples, heldout = self.heldout_samples)
+        train_test_dict = holdout_train_test(self.x_data, self.y_data, self.all_samples, heldout = self.heldout_samples, num_heldout=self.num_heldout)
         return train_test_dict
     
     # trains a model using the train/test splits (uses only the train data)
@@ -51,18 +52,27 @@ class TrainTestPipeline:
 
     def test_model(self, train_test_dict, trained_model):
         held_out_x, held_out_y, held_out_test_samples = train_test_dict['test']
-        preds = trained_model.predict(held_out_x)
+        
         classif = is_classification(self.model_name)
-        if classif:
-            score_ = f1_score(held_out_y, preds)
-            print("Test F1-Score %f"% score_)
-            print("Test Accuracy %f"% accuracy_score(held_out_y, preds))
-            print("Test Recall %f"% recall_score(held_out_y, preds))
-            print("Test Precision %f"% precision_score(held_out_y, preds))
+        preds, score_dict = get_predictions_and_score(trained_model, held_out_x, held_out_y, classif)
+        if classif: 
+            # get micro classification score (just, overall, without balancing by class)
+            score_ = score_dict['f1'][0]
         else:
-            score_ = np.sqrt(mean_squared_error(held_out_y, preds))
-            print("Test RMSE %f"% (score_))
+            score_ = score_dict['rmse']
         return preds, score_
+        # preds = trained_model.predict(held_out_x)
+        # classif = is_classification(self.model_name)
+        # if classif:
+        #     score_ = f1_score(held_out_y, preds)
+        #     print("Test F1-Score %f"% score_)
+        #     print("Test Accuracy %f"% accuracy_score(held_out_y, preds))
+        #     print("Test Recall %f"% recall_score(held_out_y, preds))
+        #     print("Test Precision %f"% precision_score(held_out_y, preds))
+        # else:
+        #     score_ = np.sqrt(mean_squared_error(held_out_y, preds))
+        #     print("Test RMSE %f"% (score_))
+        # return preds, score_
 
 
 
@@ -87,17 +97,22 @@ class TrainTestPipeline:
 
 
 
-    def exhaustive_train(self, outfile_name):
+    def exhaustive_train(self, outfile_name, cv=True, num_heldout = 3):
         i = 0
         unique_targs = self.all_samples.unique()
-        combs = [c for c in combinations(unique_targs, 3)]
+        combs = [c for c in combinations(unique_targs, num_heldout)]
         is_classif = is_classification(self.model_name)
         if is_classif:
             score_metric = 'F1-Score'
         else:
             score_metric = 'RMSE'
         total_combos = len(combs)
-        stats_cols  = ['TrainProp', 'TestProp', 'TestSample1', 'TestSample2', 'TestSample3', 'CrossVal {}'.format(score_metric), 'Test {}'.format(score_metric)]
+        stats_cols  = ['TrainProp', 'TestProp']
+        for j in range(1, num_heldout+1):
+            stats_cols.append(f"TestSample{j}")
+        if cv:
+            stats_cols.append('CrossVal {}'.format(score_metric))
+        stats_cols.append('Test {}'.format(score_metric))
         all_tr_stats_data = []
         for combo in combs:
             combo = list(combo)
@@ -106,19 +121,21 @@ class TrainTestPipeline:
             tr_round_stats = []
             self.heldout_samples = combo
             train_test_dict = self.split_data()
-            tr_test_results = self.do_train_test()
+            tr_test_results = self.do_train_test(cv=cv)
 
             tr_x, tr_y, tr_samples = tr_test_results['train_test_split']['train']
             held_out_x, held_out_y, held_out_test_samples = tr_test_results['train_test_split']['test']
 
             tr_round_stats.append(tr_x.shape[0]/len(self.all_samples))
             tr_round_stats.append(held_out_x.shape[0]/len(self.all_samples))
-            for h in self.heldout_samples:
+            for h in np.unique(held_out_test_samples):
                 tr_round_stats.append(h)
+            if cv:
+                tr_round_stats.append(np.mean(tr_test_results['train_performance']['scores'][0]))
             
-            tr_round_stats.append(np.mean(tr_test_results['train_performance']['scores']))
             tr_round_stats.append(tr_test_results['test_score'])
             all_tr_stats_data.append(tr_round_stats)
+            #assert(len(tr_round_stats) == len(stats_cols))
         tr_stats_df = pd.DataFrame(all_tr_stats_data, columns = stats_cols)
         tr_stats_df = tr_stats_df.sort_values('Test {}'.format(score_metric))
         tr_stats_df.to_csv(outfile_name, index=False)

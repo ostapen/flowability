@@ -3,8 +3,8 @@ from io import StringIO
 import os
 import csv
 import pickle as pkl
-
-from sklearn.preprocessing import PowerTransformer
+import pdb
+from sklearn.preprocessing import PowerTransformer, QuantileTransformer, MinMaxScaler
 import numpy as np
 import matplotlib.pyplot as plt
 from minepy import MINE
@@ -140,8 +140,8 @@ def get_data_and_labels(data_foldername):
         df['Flow'] = y_flow_shuffled
         df['FlowClass'] = y_class_shuffled
         df['SampleName'] = all_samples_shuffled
-                
-        df.to_csv('AllData.csv', index=False)
+        split_ = data_foldername.split("_")[0]
+        df.to_csv(f'{split_}/AllData.csv', index=False)
         return (True, df)
     return (False,None)
 
@@ -154,7 +154,7 @@ feature_columns takes a list of features to keep or None (if keeping all feature
 
 writes each clean + scaled filename to a csv file; flow value, flowclass is also included in this file 
 '''
-def preprocess_data(data_folder, clean_data_folder, flow_val_file, transform = True, flows = 'mean'):
+def preprocess_data(data_folder, clean_data_folder, flow_val_file, preproc_type= 'yeo-johnson', transform = True, flows = 'mean'):
     samples_data = {}
     all_files = os.listdir(data_folder)
     all_data = 0
@@ -173,17 +173,28 @@ def preprocess_data(data_folder, clean_data_folder, flow_val_file, transform = T
                 clean_fname = data_file
             sample_tag = clean_fname.split(' Particles')[0]
             pandas_df = read_materials_csv(os.path.join(data_folder,clean_fname))
-            if transform:
+            if preproc_type == 'yeo-johnson':
+                print("Yeo-Johnson Transform")
+                if transform:
                 # make data have Gaussian distribution, with 0 mean, unit variance 
-                pt = PowerTransformer(standardize=True)
-                transform_data = pd.DataFrame()
+                    pt = PowerTransformer(standardize=True)
+                else: 
+                    pt = PowerTransformer(standardize=False)
+            elif preproc_type == 'minmax':
+                print("Min-Max Scaling,")
+                pt = MinMaxScaler()
+            else:
+                print("Quantile Transform!")
+                pt = QuantileTransformer(output_distribution='normal')
+            transform_data = pd.DataFrame()
             feature_columns = pandas_df.columns
             for col in feature_columns:
                 data = pandas_df[col].tolist()
                 data_arr = np.asarray(data).reshape(-1,1)
                 if transform:
+                    
                     fit_pt = pt.fit(data_arr)
-
+                    #fit_pt = qt.fit(data_arr)
                 
                     norm_ = fit_pt.transform(data_arr).reshape(-1,)
                     # min_ = np.asarray([np.min(norm_)]*(norm_.shape[0]))
@@ -199,9 +210,10 @@ def preprocess_data(data_folder, clean_data_folder, flow_val_file, transform = T
                     #samples_data[sample_tag] = pandas_df[feature_columns]
                     tmp = pandas_df[feature_columns]
                     all_data += len(pandas_df)
-            
+            if sample_tag not in true_flow_vals.keys():
+                pdb.set_trace()
             flow_vals, density, flow_class = true_flow_vals[sample_tag]
-            size = re.search("\([1-9]?[1-9]?[0-9]\-[1-9]?[1-9]?[0-9]\)", sample_tag)
+            size = re.search("\([1-9]?[0-9]?[0-9]\-[1-9]?[0-9]?[0-9]\)", sample_tag)
             min_sz, max_sz = size[0].split('-')
             min_sz = min_sz.strip('(')
             max_sz = max_sz.strip(')')
@@ -225,6 +237,7 @@ def preprocess_data(data_folder, clean_data_folder, flow_val_file, transform = T
     for sample, df in samples_data.items():
         sample_filename = "{}.csv".format(sample)
         if sample_filename not in os.listdir(clean_data_folder):
+            df.dropna(inplace=True)
             df.to_csv(os.path.join(clean_data_folder, sample_filename), index=False)
     return samples_data
 '''
@@ -263,21 +276,22 @@ def get_true_flow_values(flow_file):
             true_flow_vals[sample_name] = ([val], density, fl_cl)
     return true_flow_vals
 
-def compute_correlation(df, method, threshold, heldout_cols = None):
+def compute_correlation(df, data_folder, method, threshold, heldout_cols = None):
         x_cols = [col for col in df.columns if col not in ['SampleName', 'Flow', 'FlowClass']]
         if heldout_cols:
             for col in heldout_cols:
                 x_cols.remove(col)
         x_data = df[x_cols]
-        files = os.listdir('.')
+        #files = os.listdir('.')
         if method == 'pearson':
             # linear correlation
             corr_matrix = x_data.corr('pearson')
         else: 
-            if 'nonlinear_correlation_matrix.pkl'  not in files:
+            if not os.path.exists(f'{data_folder}/nonlinear_correlation_matrix.pkl'):
                 # nonlinear correlation
                 # subset = np.arange(2000)
                 # np.random.shuffle(subset)
+                print("Recomputing MIC matrix.")
                 x_data = x_data.sample(n=2000, replace = False)
                 mine = MINE(alpha=0.6, c=15, est="mic_approx")
                 corr_matrix = [[0]*len(x_cols) for i in range(len(x_cols))]
@@ -294,10 +308,10 @@ def compute_correlation(df, method, threshold, heldout_cols = None):
                             corr_matrix[i][j] = mine.mic()
                 
                 corr_matrix = np.asarray(corr_matrix)
-                with open('nonlinear_correlation_matrix.pkl', 'wb') as f:
+                with open(f'{data_folder}/nonlinear_correlation_matrix.pkl', 'wb') as f:
                     pkl.dump(corr_matrix, f)
             else:
-                with open('nonlinear_correlation_matrix.pkl', 'rb') as f:
+                with open(f'{data_folder}/nonlinear_correlation_matrix.pkl', 'rb') as f:
                     corr_matrix = pkl.load(f)
         return corr_matrix
 def update_flow_classes(df, flow_file):

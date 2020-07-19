@@ -3,7 +3,6 @@ import pandas as pd
 from sklearn.model_selection import cross_val_score, cross_val_predict, train_test_split, StratifiedShuffleSplit, StratifiedKFold, KFold
 from itertools import cycle
 import numpy as np
-import secrets
 import seaborn as sns
 import graphviz
 from sklearn import tree 
@@ -31,8 +30,10 @@ returns dictionary of scores
 '''
 def get_predictions_and_score(classifier, test_x, test_y, classify = False):
     predictions = classifier.predict(test_x)
-    if classify:
-        print("Classification")
+    
+    print("_______________________")
+    print("TEST PERFORMANCE")
+    if not classify:
         r2_score = classifier.score(test_x, test_y)
         diffs = abs(test_y-predictions)
         rmse = np.sqrt(mean_squared_error(test_y, predictions))
@@ -47,16 +48,24 @@ def get_predictions_and_score(classifier, test_x, test_y, classify = False):
                                             'standard_deviation': np.std(diffs)}, 
             'rmse': rmse}
     else: 
-        f1_ = f1_score(test_y, predictions)
-        recall_ = recall_score(test_y, predictions)
-        precision_ = precision_score(test_y, predictions)
-        accuracy_ = accuracy_score(test_y, predictions)
+
+        f1_mic = f1_score(test_y, predictions, average='micro')
+        print("F1 Validation, Micro: %.2f"%(f1_mic))
+        f1_mac = f1_score(test_y, predictions, average='micro')
+        print("F1 Validation, Macro: %.2f"%(f1_mac))
+        recall_mic = recall_score(test_y, predictions, average='micro')
+        recall_mac = recall_score(test_y, predictions, average='macro')
+        precision_mic = precision_score(test_y, predictions, average='micro')
+        precision_mac = precision_score(test_y, predictions, average='macro')
         print("Classification Performance")
-        print("F1 Score: {}".format(f1_))
-        print("Recall: {}".format(recall_))
-        print("Precision: {}".format(precision_))
-        print("Accuracy: {}".format(accuracy_))
-        return predictions, {'f1': f1_, 'recall': recall_, 'precision': precision_, 'accuracy': accuracy_}
+        print("F1 Test Macro: {}".format(f1_mac))
+        print("F1 Test Micro: {}".format(f1_mic))
+        print("Recall Macro: {}".format(recall_mac))
+        print("Recall Micro: {}".format(recall_mic))
+        print("Precision Macro: {}".format(precision_mac))
+        print("Precision Micro: {}".format(precision_mic))
+        return predictions, {'f1': (f1_mic, f1_mac), 'recall': (recall_mic, recall_mac), 
+        'precision': (precision_mic, precision_mac)}
 
 
 '''
@@ -77,8 +86,8 @@ def get_performance_stats(test_y, predictions, test_sample_array, classify=False
             if classify:
                 print("Classification")
 
-                tmp_[idx] = {'f1':f1_score(real, pred), 'recall': recall_score(real, pred), 
-                'precision': precision_score(real, pred), 'accuracy': accuracy_score(real, pred),
+                tmp_[idx] = {'f1':f1_score(real, pred, average='micro'), 'recall': recall_score(real, pred, average='micro'), 
+                'precision': precision_score(real, pred, average='micro'),
                                                             'predicted':pred, 'actual':real}
             else:
                 
@@ -104,7 +113,7 @@ def visualize_regression_performance(test_y, predictions, test_sample_array, out
     figs = []
     pdf = matplotlib.backends.backend_pdf.PdfPages(output_file)
     unique_test_samples = np.unique(test_sample_array)
-    fig, ax = plt.subplots(figsize=(11,9))
+    fig, ax = plt.subplots(figsize=(11,9*len(unique_test_samples)))
     cycol = cycle('grcmbk')
     mark = cycle('o*<>xD')
     annotated_y = []
@@ -153,21 +162,20 @@ first label is taken as class 0
 def visualize_classification_performance(test_y, predictions, test_sample_array, output_file, class_labels):
     pdf = matplotlib.backends.backend_pdf.PdfPages(output_file)
     unique_test_samples = np.unique(test_sample_array)
-    fig, axes = plt.subplots(3,1, figsize = (11,11))
+    fig, axes = plt.subplots(len(unique_test_samples),1, figsize = (11,11*len(unique_test_samples)))
     for idx in range(len(unique_test_samples)):
         sample = unique_test_samples[idx]
         idxs_ = np.where(test_sample_array == sample)[0]
         preds_ = predictions[idxs_]
         reals_ = test_y[idxs_]
-
-        labels = class_labels
+        labels = sorted(class_labels)
         cm = confusion_matrix(reals_, preds_, labels)
         ax = axes[idx]
         cax = ax.matshow(cm)
         ax.set_title('Confusion Matrix for {}'.format(sample))
         fig.colorbar(cax, ax = ax)
-        ax.set_xticklabels([''] + labels)
-        ax.set_yticklabels([''] + labels)
+        ax.set_xticklabels(['']+[str(i) for i in labels])
+        ax.set_yticklabels(['']+[str(i) for i in labels])
         ax.set_xlabel('Predicted')
         ax.set_ylabel('True')        
     pdf.savefig(fig)
